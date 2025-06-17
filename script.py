@@ -4,7 +4,7 @@ import altair as alt
 from datetime import datetime
 
 # Load data (replace with your actual CSV)
-df = pd.read_csv("/Users/arunsoorya/Documents/Semester_3/Capstone/Code/Simulated_Carbon-Aware_Server_Dataset.csv")
+df = pd.read_csv("Simulated_Carbon-Aware_Server_Dataset.csv")
 
 # Streamlit page settings
 st.set_page_config(page_title="Green IT Dashboard", layout="wide")
@@ -54,8 +54,7 @@ st.altair_chart(bar_chart, use_container_width=True)
 # --- DATA TABLE ---
 st.markdown("### 🧾 Detailed Server Metrics")
 with st.expander("View Full Table"):
-    st.dataframe(data.sort_values(by="Total_CO2_kg", a
-    ending=False).reset_index(drop=True), use_container_width=True)
+    st.dataframe(data.sort_values(by="Total_CO2_kg", ascending=False).reset_index(drop=True), use_container_width=True)
 
 # --- GPT RECOMMENDATIONS ---
 st.markdown("### 🤖 GenAI-Based Recommendations")
