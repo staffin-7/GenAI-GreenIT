@@ -82,7 +82,7 @@ if uploaded_file:
 
 
 
-        st.title("🌿 CarbonWise: Sustainable IT Dashboard")
+        st.title("🌿 SustainIQ: Sustainable IT Dashboard")
         render_sustainability_score(sustainability_score)
         st.markdown("> Monitor and optimize your IT infrastructure's environmental impact.")
         mean_ci = backend.df['Carbon_Intensity_gCO2/kWh'].mean()
