@@ -6,7 +6,17 @@ import plotly.express as px
 from backend import CarbonBackend
 import pydeck as pdk
 from component import render_sustainability_score
-
+from component import render_kpi_cards
+import base64
+from datetime import datetime
+import io
+import base64
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 backend = CarbonBackend()
@@ -82,63 +92,63 @@ if uploaded_file:
 
 
 
-        st.title("🌿 SustainIQ: Sustainable IT Dashboard")
+        st.title("🌿 CarbonWise: Sustainable IT Dashboard")
         render_sustainability_score(sustainability_score)
         st.markdown("> Monitor and optimize your IT infrastructure's environmental impact.")
         mean_ci = backend.df['Carbon_Intensity_gCO2/kWh'].mean()
 
-        k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
-        k1.metric("Total CO₂ Emissions", f"{summary['total_co2']:.2f} kg")
-        k2.metric("Avg CPU Utilization", f"{summary['avg_cpu']:.1f}%")
-        k3.metric("Total Energy Used", f"{summary['total_energy']:.1f} kWh")
-        breached_servers = filtered_data[filtered_data['Threshold_Breach'] == 'Yes']['Server_ID'].nunique()
-        k4.metric("⚠️ Breached Servers", f"{breached_servers}")
-        k5.metric("CO₂ Efficiency", f"{co2_efficiency:.2f} kg/kWh")
-        k6.metric("Avg PUE", f"{backend.df['PUE'].mean():.2f}")
-        k7.metric("Shift Workloads", f"{mean_ci:.0f} g/kWh")
+        pue_avg = backend.df['PUE'].mean()
+        render_kpi_cards(summary, co2_efficiency, pue_avg, mean_ci)
 
         st.markdown("---")
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Trends", "🚨 Alerts", "🌍 Sustainability"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Overview", "📈 Trends", "🚨 Alerts", "🌍 Sustainability", "📄 Report"])
+
 
         with tab1:
-            server_emissions = (
-            filtered_data.groupby("Server_ID", as_index=False)["Total_CO2_kg"]
-            .sum()
-            .sort_values("Total_CO2_kg", ascending=False)
-        )
+            left_col, right_col = st.columns([2, 1])  # wider left side for charts
 
-            server_chart = alt.Chart(server_emissions).mark_bar().encode(
-                x=alt.X("Server_ID:N", sort='-y', title="Server ID"),
-                y=alt.Y("Total_CO2_kg:Q", title="Total CO₂ Emissions (kg)"),
-                color=alt.Color("Total_CO2_kg:Q", scale=alt.Scale(scheme="reds")),
-                tooltip=["Server_ID", "Total_CO2_kg"]
-            ).properties(
-                title="🔝 Total CO₂ Emissions by Server",
-                height=300
-            ).configure_axis(grid=False)
+            with left_col:
+                st.markdown("### 🔌 Energy vs CPU Efficiency")
+                scatter = alt.Chart(filtered_data).mark_circle(size=60, opacity=0.6).encode(
+                    x=alt.X('Energy_Consumption_kWh', title='Energy Used (kWh)', scale=alt.Scale(zero=False)),
+                    y=alt.Y('CPU_Utilisation (%)', title='CPU Utilization (%)'),
+                    color='Data_Center_Location',
+                    tooltip=['Energy_Consumption_kWh', 'CPU_Utilisation (%)', 'Total_CO2_kg']
+                ).properties(height=300)
+                st.altair_chart(scatter, use_container_width=True)
 
-            st.altair_chart(server_chart, use_container_width=True)
+                st.markdown("### ⏱️ Hourly CPU Utilization Trend")
+                filtered_data["Hour"] = pd.to_datetime(filtered_data["DateTime"]).dt.hour
+                hourly_cpu = filtered_data.groupby('Hour', as_index=False)['CPU_Utilisation (%)'].mean()
+                cpu_chart = alt.Chart(hourly_cpu).mark_line(point=True).encode(
+                    x=alt.X('Hour:O', title='Hour of Day'),
+                    y=alt.Y('CPU_Utilisation (%)', title='Avg CPU Utilization (%)'),
+                    tooltip=['Hour', 'CPU_Utilisation (%)']
+                ).properties(height=300)
+                st.altair_chart(cpu_chart, use_container_width=True)
 
-            filtered_data["Hour"] = pd.to_datetime(filtered_data["DateTime"]).dt.hour
+            with right_col:
+                st.markdown("### 🧠 GenAI Recommendations (Prototype)")
+                st.info("These are preliminary suggestions based on observed patterns:")
 
-            hourly_avg = (
-                filtered_data.groupby("Hour", as_index=False)["Total_CO2_kg"]
-                .mean()
-                .sort_values("Total_CO2_kg", ascending=False)
-            )
+                avg_cpu = filtered_data['CPU_Utilisation (%)'].mean()
+                avg_pue = filtered_data['PUE'].mean()
+                avg_energy = filtered_data['Energy_Consumption_kWh'].mean()
+                server_days = filtered_data.groupby('Server_ID')['Date'].nunique()
+                high_uptime_count = (server_days > 20).sum()  # arbitrary threshold, adjust as needed
 
-            hour_chart = alt.Chart(hourly_avg).mark_bar().encode(
-            x=alt.X("Hour:O", title="Hour of Day", sort=alt.SortOrder("ascending")),  # maintain natural order
-            y=alt.Y("Total_CO2_kg:Q", title="Avg CO₂ Emissions (kg)"),
-            color=alt.Color("Total_CO2_kg:Q", scale=alt.Scale(scheme="greens"), legend=None),
-            tooltip=["Hour", "Total_CO2_kg"]
-        ).properties(
-            title="⏱️ Hourly Avg CO₂ Emissions (0–23)",
-            height=300
-        ).configure_axis(grid=False)
 
-            st.altair_chart(hour_chart, use_container_width=True)
+                if avg_cpu < 50:
+                    st.markdown("• 🚀 **Consolidate underutilized servers** — average CPU usage is low.")
+                if avg_pue > 1.7:
+                    st.markdown("• ❄️ **Improve cooling systems** — high average PUE detected.")
+                if avg_energy > 1200:
+                    st.markdown("• ⚡ **Reduce high energy usage** — workloads may be oversized.")
+                if high_uptime_count > 30:
+                    st.markdown("• 🔄 **Schedule maintenance** — several servers have extreme uptime.")
+
+                st.caption("🧠 More personalized recommendations coming soon via GenAI.")
 
 
 
@@ -283,7 +293,7 @@ if uploaded_file:
                             "Servers: {Servers}",
                     "style": {"backgroundColor": "black", "color": "white"}
                 },
-                map_style="mapbox://styles/mapbox/light-v9"
+                map_style="mapbox://styles/mapbox/satellite-streets-v12"
             ))
 
             st.markdown("### ✅ Sustainability Recommendations")
@@ -324,6 +334,116 @@ if uploaded_file:
                 st.success("🎉 You're already meeting all criteria for a score of 4/4!")
 
             st.caption("_🧠 More personalized suggestions will be powered by GenAI soon..._")
+
+        with tab5:    
+
+            # --- Dynamic values (replace with your actual variables) ---
+            locations = list(filtered_data['Data_Center_Location'].unique())
+            pue = backend.df['PUE'].mean()
+            co2_eff = co2_efficiency
+            mean_ci = backend.df['Carbon_Intensity_gCO2/kWh'].mean()
+            score = sustainability_score
+            avg_cpu = summary['avg_cpu']
+
+            recs = []
+            if co2_eff >= 0.10:
+                recs.append("🌍 Shift workloads to regions with lower carbon intensity.")
+            if pue > 1.3:
+                recs.append("❄️ Upgrade cooling infrastructure to lower PUE.")
+            if co2_eff > 0.10:
+                recs.append("🧪 Consolidate servers to reduce CO₂ per kWh.")
+            if avg_cpu < 60:
+                recs.append("⚡ Improve CPU utilization by decommissioning idle servers.")
+
+            # --- Render in-tab visual report ---
+            st.markdown("## 🌍 Sustainability Report Summary")
+            st.markdown(f"**Date Generated:** {datetime.now():%Y-%m-%d %H:%M}")
+            st.markdown(f"**Sustainability Score:** {score} / 4")
+            st.markdown("---")
+
+            st.markdown("### 📌 EU Carbon Emission Requirement")
+            st.write("• EU recommends PUE < 1.3 and Carbon Intensity < 100 gCO₂/kWh by 2030.")
+
+            st.markdown("### 📊 Uploaded Data Center Summary")
+            st.write(f"• **Data Centers:** {len(locations)} ({', '.join(locations)})")
+            st.write(f"• **Avg CO₂ Efficiency:** {co2_eff:.2f} kg/kWh")
+            st.write(f"• **Avg PUE:** {pue:.2f}")
+            st.write(f"• **Avg Carbon Intensity:** {mean_ci:.0f} g/kWh")
+            st.write(f"• **Avg CPU Utilization:** {avg_cpu:.1f}%")
+
+            st.markdown("### 🧠 AI Summary")
+            st.write("While energy efficiency is decent, carbon intensity is above EU thresholds. Some servers are underutilized. Optimize workloads and infrastructure.")
+
+            st.markdown("### 🏁 Recommendations")
+            for r in recs:
+                st.write(f"- {r}")
+
+            st.markdown("---")
+
+            # --- Build PDF ---
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=50, bottomMargin=30)
+            styles = getSampleStyleSheet()
+            Story = []
+
+            Story.append(Paragraph("<b><font size=16 color='#00cc99'>🌿 Sustainability Report Summary</font></b>", styles["Title"]))
+            Story.append(Spacer(1, 12))
+            Story.append(Paragraph(f"<font size=10><b>Date Generated:</b> {datetime.now():%Y-%m-%d %H:%M}</font>", styles["Normal"]))
+            Story.append(Spacer(1, 6))
+            Story.append(Paragraph(f"<font size=10><b>Sustainability Score:</b> {score} / 4</font>", styles["Normal"]))
+            Story.append(Spacer(1, 16))
+
+            Story.append(Paragraph("<b><font color='#ffaa00'>📌 EU Carbon Emission Requirement</font></b>", styles["Heading3"]))
+            Story.append(Spacer(1, 4))
+            Story.append(Paragraph("The EU recommends PUE < 1.3 and Carbon Intensity < 100 gCO₂/kWh by 2030.", styles["Normal"]))
+            Story.append(Spacer(1, 12))
+
+            Story.append(Paragraph("<b><font color='#33ccff'>📊 Uploaded Data Center Summary</font></b>", styles["Heading3"]))
+            data_table = [
+                ["Total Data Centers", f"{len(locations)} ({', '.join(locations)})"],
+                ["Avg CO₂ Efficiency", f"{co2_eff:.2f} kg/kWh"],
+                ["Avg PUE", f"{pue:.2f}"],
+                ["Avg Carbon Intensity", f"{mean_ci:.0f} g/kWh"],
+                ["Avg CPU Utilization", f"{avg_cpu:.1f}%"]
+            ]
+            table = Table(data_table, hAlign='LEFT', colWidths=[180, 250])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (1, 0), colors.whitesmoke),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.lightgrey, colors.whitesmoke]),
+            ]))
+            Story.append(table)
+            Story.append(Spacer(1, 16))
+
+            Story.append(Paragraph("<b><font color='#cc99ff'>🧠 AI Summary of Observations</font></b>", styles["Heading3"]))
+            summary_text = (
+                "While overall energy efficiency is reasonable, carbon intensity remains above targets. "
+                "CPU utilization suggests some servers are underutilized. Optimization through workload "
+                "shifting and infrastructure tuning is recommended."
+            )
+            Story.append(Paragraph(summary_text, styles["BodyText"]))
+            Story.append(Spacer(1, 16))
+
+            Story.append(Paragraph("<b><font color='#ff6666'>🏁 Recommendations</font></b>", styles["Heading3"]))
+            for r in recs:
+                Story.append(Paragraph(r, styles["Normal"]))
+                Story.append(Spacer(1, 4))
+
+            Story.append(Spacer(1, 28))
+            Story.append(Paragraph("<font size=9 color='#888888'>Built for UCD x Deloitte | Capstone 2025 🌱</font>", styles["Normal"]))
+
+            doc.build(Story)
+            buffer.seek(0)
+            b64_pdf = base64.b64encode(buffer.read()).decode()
+            st.download_button(
+            label="📥 Download PDF Report",
+            data=base64.b64decode(b64_pdf),
+            file_name="Sustainability_Report.pdf",
+            mime="application/pdf",
+            key="download-pdf-button"
+)       
 
         st.markdown("---")
         st.markdown("Built for UCD x Deloitte | Capstone 2025 🌱")
